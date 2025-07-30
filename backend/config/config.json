@@ -1,0 +1,9 @@
+﻿{
+  "development": {
+    "username": "root",
+    "password": "",
+    "database": "parfumerie_db",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  }
+}
