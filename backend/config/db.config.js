@@ -3,7 +3,7 @@ require('dotenv').config();
 
 module.exports = {
   development: {
-    DB: process.env.DB_NAME || 'parfumerie_db',
+    DB: process.env.DB_NAME || 'parfumerie_db_new',
     USER: process.env.DB_USER || 'root',
     PASSWORD: process.env.DB_PASSWORD || '',
     HOST: process.env.DB_HOST || 'localhost',

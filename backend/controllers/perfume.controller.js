@@ -32,44 +32,38 @@ exports.getNewArrivals = async (req, res) => {
 // Récupérer les tendances
 exports.getTrends = async (req, res) => {
   try {
-    const trendingPerfumes = await db.Perfume.findAll({
-      attributes: [
-        'id',
-        'name',
-        'price',
-        'image_url',
-        [db.sequelize.fn('SUM', db.sequelize.col('Sales.quantity')), 'total_sales']
-      ],
-      include: [{
-        model: db.Sale,
-        as: 'sales',
-        attributes: [],
-        required: true,
-        where: {
-          createdAt: {
-            [Op.gte]: new Date(new Date() - 30 * 24 * 60 * 60 * 1000)
-          }
-        }
-      }],
-      group: ['Perfume.id'],
-      order: [[db.sequelize.literal('total_sales'), 'DESC']],
-      limit: 10
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Utilisez created_at au lieu de createdAt
+    const [results] = await db.sequelize.query(`
+      SELECT 
+        p.id,
+        p.name,
+        p.price,
+        p.image_url,
+        COALESCE(SUM(s.quantity), 0) as total_sales
+      FROM Perfumes p
+      LEFT JOIN Sales s ON p.id = s.perfume_id 
+        AND s.created_at >= :thirtyDaysAgo
+      GROUP BY p.id
+      HAVING total_sales > 0
+      ORDER BY total_sales DESC
+      LIMIT 10
+    `, {
+      replacements: { thirtyDaysAgo },
+      type: db.sequelize.QueryTypes.SELECT
     });
 
-    res.json(trendingPerfumes || []);
+    res.json(results || []);
   } catch (error) {
-    console.error('Erreur dans getTrends:', {
-      message: error.message,
-      stack: error.stack,
-      sql: error.sql // Affiche la requête SQL en erreur
-    });
+    console.error('Erreur dans getTrends:', error.message);
     res.status(500).json({
       message: 'Erreur lors du chargement des tendances',
       details: process.env.NODE_ENV === 'development' ? error.message : null
     });
   }
 };
-
 // Recherche et filtrage
 exports.search = async (req, res) => {
   try {
@@ -151,6 +145,169 @@ exports.search = async (req, res) => {
     res.status(500).json({
       message: 'Erreur lors de la recherche',
       details: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+};
+// Récupérer les détails d'un parfum par ID
+exports.getPerfumeById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const perfume = await db.Perfume.findByPk(id, {
+      include: [
+        { model: db.Category, as: 'categories' },
+        { model: db.Type, as: 'type' },
+        { model: db.Season, as: 'season' },
+        { model: db.Gender, as: 'gender' },
+        { model: db.Concentration, as: 'concentration' }
+      ]
+    });
+
+    if (!perfume) {
+      return res.status(404).json({ message: 'Parfum non trouvé' });
+    }
+
+    res.json(perfume);
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Erreur lors de la récupération du parfum',
+      error: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+};
+
+// Récupérer les détails d'un parfum par nom
+exports.getPerfumeByName = async (req, res) => {
+  try {
+    const { name } = req.params;
+    
+    const perfume = await db.Perfume.findOne({
+      where: { name },
+      include: [
+        { model: db.Category, as: 'categories' },
+        { model: db.Type, as: 'type' },
+        { model: db.Season, as: 'season' },
+        { model: db.Gender, as: 'gender' },
+        { model: db.Concentration, as: 'concentration' }
+      ]
+    });
+
+    if (!perfume) {
+      return res.status(404).json({ message: 'Parfum non trouvé' });
+    }
+
+    res.json(perfume);
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Erreur lors de la récupération du parfum',
+      error: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+};
+
+// Ajouter un nouveau parfum (Admin seulement)
+exports.createPerfume = async (req, res) => {
+  try {
+    const { name, description, price, stock_quantity, image_url, categories, type_id, season_id, gender_id, concentration_id } = req.body;
+
+    const perfume = await db.Perfume.create({
+      name,
+      description,
+      price,
+      stock_quantity,
+      image_url,
+      type_id,
+      season_id,
+      gender_id,
+      concentration_id
+    });
+
+    if (categories && categories.length > 0) {
+      await perfume.setCategories(categories);
+    }
+
+    const newPerfume = await db.Perfume.findByPk(perfume.id, {
+      include: [{ model: db.Category, as: 'categories' }]
+    });
+
+    res.status(201).json(newPerfume);
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Erreur lors de la création du parfum',
+      error: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+};
+
+// Mettre à jour un parfum (Admin seulement)
+exports.updatePerfume = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const perfume = await db.Perfume.findByPk(id);
+    if (!perfume) {
+      return res.status(404).json({ message: 'Parfum non trouvé' });
+    }
+
+    await perfume.update(updates);
+
+    if (updates.categories) {
+      await perfume.setCategories(updates.categories);
+    }
+
+    const updatedPerfume = await db.Perfume.findByPk(id, {
+      include: [{ model: db.Category, as: 'categories' }]
+    });
+
+    res.json(updatedPerfume);
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Erreur lors de la mise à jour du parfum',
+      error: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+};
+
+// Supprimer un parfum (Admin seulement)
+exports.deletePerfume = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const perfume = await db.Perfume.findByPk(id);
+    if (!perfume) {
+      return res.status(404).json({ message: 'Parfum non trouvé' });
+    }
+
+    await perfume.destroy();
+    res.json({ message: 'Parfum supprimé avec succès' });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Erreur lors de la suppression du parfum',
+      error: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+};
+
+// Récupérer tous les parfums (pour la page de filtrage)
+exports.getAllPerfumes = async (req, res) => {
+  try {
+    const perfumes = await db.Perfume.findAll({
+      include: [
+        { model: db.Category, as: 'categories' },
+        { model: db.Type, as: 'type' },
+        { model: db.Season, as: 'season' },
+        { model: db.Gender, as: 'gender' },
+        { model: db.Concentration, as: 'concentration' }
+      ],
+      order: [['name', 'ASC']]
+    });
+
+    res.json(perfumes);
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Erreur lors de la récupération des parfums',
+      error: process.env.NODE_ENV === 'development' ? error.message : null
     });
   }
 };

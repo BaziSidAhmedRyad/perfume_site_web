@@ -20,6 +20,8 @@ app.get('/', (req, res) => res.json({ status: 'API OK' }));
 const perfumeRoutes = require('./routes/perfume.routes');
 app.use('/api/perfumes', perfumeRoutes);
 
+const authRoutes = require('./routes/auth.routes');
+app.use('/api/auth', authRoutes);
 // Démarrer le serveur
 const PORT = process.env.PORT || 3000;
 db.sequelize.sync({ force: false })
