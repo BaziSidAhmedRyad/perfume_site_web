@@ -1,0 +1,9 @@
+﻿{
+  "development": {
+    "username": "root",
+    "password": "",
+    "database": "db_parfums",
+    "host": "localhost",
+    "dialect": "mysql"
+  }
+}
